@@ -894,8 +894,7 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
             }
         },
         .address_of => {
-            const result = try expr(gz, scope, .{ .rl = .ref }, node_datas[node].lhs);
-            return rvalue(gz, ri, result, node);
+            return AddressOf(gz, scope, ri, node, node_datas[node].lhs);
         },
         .optional_type => {
             const operand = try typeExpr(gz, scope, node_datas[node].lhs);
@@ -5579,6 +5578,17 @@ fn addFieldAccess(
     });
 }
 
+fn AddressOf(
+    gz: *GenZir,
+    scope: *Scope,
+    ri: ResultInfo,
+    node: Ast.Node.Index,
+    lhs: Ast.Node.index
+) InnerError!Zir.Inst.Ref {
+    const result = try expr(gz, scope, .{ .rl = .ref }, lhs);
+    return rvalue(gz, ri, result, node);
+}
+
 fn arrayAccess(
     gz: *GenZir,
     scope: *Scope,
@@ -5601,7 +5611,13 @@ fn arrayAccess(
             return gz.addPlNode(.elem_ptr_node, node, Zir.Inst.Bin{ .lhs = lhs, .rhs = rhs });
         },
         else => {
-            const lhs = try expr(gz, scope, .{ .rl = .none }, node_datas[node].lhs);
+            var lhs: Zir.Inst.Ref = undefined;
+            const address_of_like = node_tags[node_datas[node].lhs] == .field_access;
+            if (address_of_like) {
+                lhs = try AddressOf(gz, scope, ri, node, node_datas[node].lhs);
+            } else {
+                lhs = try expr(gz, scope, .{ .rl = .none }, node_datas[node].lhs);
+            }
 
             maybeAdvanceSourceCursorToMainToken(gz, node);
             const line = gz.astgen.source_line - gz.decl_line;
